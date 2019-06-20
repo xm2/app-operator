@@ -6,12 +6,15 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	//"runtime/trace"
+	//"runtime/pprof"
+	//olog "log"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
-	"home/centos/go/src/app-operator/pkg/apis"
-	"home/centos/go/src/app-operator/pkg/controller"
+	"app-operator/pkg/apis"
+	"app-operator/pkg/controller"
 
 	"github.com/operator-framework/operator-sdk/pkg/k8sutil"
 	"github.com/operator-framework/operator-sdk/pkg/leader"
@@ -32,6 +35,7 @@ var (
 	metricsPort int32 = 8383
 )
 var log = logf.Log.WithName("cmd")
+var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
 
 func printVersion() {
 	log.Info(fmt.Sprintf("Go Version: %s", runtime.Version()))
@@ -49,6 +53,33 @@ func main() {
 	pflag.CommandLine.AddGoFlagSet(flag.CommandLine)
 
 	pflag.Parse()
+
+	/*
+	f, err := os.Create("trace.out")
+	if err != nil {
+		olog.Fatalf("failed to create trace output file: %v", err)
+	}
+	defer func() {
+		if err := f.Close(); err != nil {
+			olog.Fatalf("failed to close trace file: %v", err)
+		}
+	}()
+
+	if err := trace.Start(f); err != nil {
+		olog.Fatalf("failed to start trace: %v", err)
+	}
+	defer trace.Stop()
+	*/
+    /*
+	if *cpuprofile != "" {
+        f, err := os.Create(*cpuprofile)
+        if err != nil {
+            olog.Fatal(err)
+        }
+        pprof.StartCPUProfile(f)
+        defer pprof.StopCPUProfile()
+	}
+	*/
 
 	// Use a zap logr.Logger implementation. If none of the zap
 	// flags are configured (or if the zap flag set is not being
@@ -122,4 +153,5 @@ func main() {
 		log.Error(err, "Manager exited non-zero")
 		os.Exit(1)
 	}
+
 }
