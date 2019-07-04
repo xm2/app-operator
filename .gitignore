@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Temporary Build Files
 build/_output
 build/_test
@@ -51,12 +52,15 @@ company-statistics-cache.el
 # anaconda-mode
 anaconda-mode/
 ### Go ###
+=======
+>>>>>>> 4433a3b88589ba188921b261ef9b17093cf38d71
 # Binaries for programs and plugins
 *.exe
 *.exe~
 *.dll
 *.so
 *.dylib
+<<<<<<< HEAD
 # Test binary, build with 'go test -c'
 *.test
 # Output of the go coverage tool, specifically when used with LiteIDE
@@ -75,3 +79,11 @@ tags
 .vscode/*
 .history
 # End of https://www.gitignore.io/api/go,vim,emacs,visualstudiocode
+=======
+
+# Test binary, build with `go test -c`
+*.test
+
+# Output of the go coverage tool, specifically when used with LiteIDE
+*.out
+>>>>>>> 4433a3b88589ba188921b261ef9b17093cf38d71
