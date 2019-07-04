@@ -19,7 +19,7 @@ spec:
           image: example/app-operator
           command:
           - app-operator
-          imagePullPolicy: Always
+          imagePullPolicy: IfNotPresent
           env:
             - name: WATCH_NAMESPACE
               valueFrom:

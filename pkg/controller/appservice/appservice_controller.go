@@ -2,6 +2,7 @@ package appservice
 
 import (
 	"context"
+	"fmt"
 
 	appv1alpha1 "app-operator/pkg/apis/app/v1alpha1"
 
@@ -9,7 +10,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
+	utilrand "k8s.io/apimachinery/pkg/util/rand"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -19,6 +20,11 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/runtime/log"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 )
+
+const randomSuffixLength = 10
+
+// k8s object name has a maximum length
+const MaxNameLength = 63 - randomSuffixLength - 1
 
 var log = logf.Log.WithName("controller_appservice")
 
@@ -54,13 +60,15 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 
 	// TODO(user): Modify this to be the types you create that are owned by the primary resource
 	// Watch for changes to secondary resource Pods and requeue the owner AppService
-	err = c.Watch(&source.Kind{Type: &corev1.Pod{}}, &handler.EnqueueRequestForOwner{
-		IsController: true,
-		OwnerType:    &appv1alpha1.AppService{},
-	})
-	if err != nil {
-		return err
-	}
+	/*
+		err = c.Watch(&source.Kind{Type: &corev1.Pod{}}, &handler.EnqueueRequestForOwner{
+			IsController: true,
+			OwnerType:    &appv1alpha1.AppService{},
+		})
+		if err != nil {
+			return err
+		}
+	*/
 
 	return nil
 }
@@ -101,32 +109,99 @@ func (r *ReconcileAppService) Reconcile(request reconcile.Request) (reconcile.Re
 		return reconcile.Result{}, err
 	}
 
-	// Define a new Pod object
-	pod := newPodForCR(instance)
-
-	// Set AppService instance as the owner and controller
-	if err := controllerutil.SetControllerReference(instance, pod, r.scheme); err != nil {
+	podList := &corev1.PodList{}
+	listOpts := &client.ListOptions{Namespace: instance.Namespace}
+	listOpts.SetLabelSelector(fmt.Sprintf("app=%s", instance.Name))
+	err = r.client.List(context.TODO(), listOpts, podList)
+	if err != nil {
+		// Error reading the object - requeue the request.
 		return reconcile.Result{}, err
 	}
 
-	// Check if this Pod already exists
-	found := &corev1.Pod{}
-	err = r.client.Get(context.TODO(), types.NamespacedName{Name: pod.Name, Namespace: pod.Namespace}, found)
-	if err != nil && errors.IsNotFound(err) {
+	running := []*corev1.Pod{}
+	pending := []*corev1.Pod{}
+
+	for i := range podList.Items {
+		pod := &podList.Items[i]
+		if pod.DeletionTimestamp != nil {
+			continue
+		}
+		if len(pod.OwnerReferences) < 1 {
+			continue
+		}
+		if pod.OwnerReferences[0].UID != instance.UID {
+			continue
+		}
+		switch pod.Status.Phase {
+		case corev1.PodRunning:
+			running = append(running, pod)
+		case corev1.PodPending:
+			pending = append(pending, pod)
+		}
+	}
+
+	replicas := int32(len(running) + len(pending))
+	diff := int(*instance.Spec.Replicas - replicas)
+	reqLogger.Info("reconcile:", "Spec.replicas", *instance.Spec.Replicas, "pod created replicas", replicas)
+	// scale out
+	for diff > 0 {
+		reqLogger.Info("reconcile: scale out")
+		pod := newPodForCRWithRandomName(instance)
+		// Set AppService instance as the owner and controller
+		if err := controllerutil.SetControllerReference(instance, pod, r.scheme); err != nil {
+			return reconcile.Result{}, err
+		}
 		reqLogger.Info("Creating a new Pod", "Pod.Namespace", pod.Namespace, "Pod.Name", pod.Name)
 		err = r.client.Create(context.TODO(), pod)
 		if err != nil {
 			return reconcile.Result{}, err
 		}
-
-		// Pod created successfully - don't requeue
-		return reconcile.Result{}, nil
-	} else if err != nil {
-		return reconcile.Result{}, err
+		diff--
 	}
 
-	// Pod already exists - don't requeue
-	reqLogger.Info("Skip reconcile: Pod already exists", "Pod.Namespace", found.Namespace, "Pod.Name", found.Name)
+	if diff < 0 {
+		// scale in
+		// firstly chose from pending list, then from running list, simply chose the last one in the return list
+		reqLogger.Info("reconcile: scale in")
+		delList := append(running, pending...)
+		delList = delList[(len(delList) + diff):]
+		for _, p := range delList {
+			err = r.client.Delete(context.TODO(), p, client.GracePeriodSeconds(5))
+			reqLogger.Info("reconcile: scale in pod", "Pod.Namespace", p.Namespace, "Pod.Name", p.Name)
+			if err != nil {
+				return reconcile.Result{}, err
+			}
+		}
+	}
+
+	/*
+		// Define a new Pod object
+		pod := newPodForCR(instance)
+
+		// Set AppService instance as the owner and controller
+		if err := controllerutil.SetControllerReference(instance, pod, r.scheme); err != nil {
+			return reconcile.Result{}, err
+		}
+
+		// Check if this Pod already exists
+		found := &corev1.Pod{}
+		err = r.client.Get(context.TODO(), types.NamespacedName{Name: pod.Name, Namespace: pod.Namespace}, found)
+		if err != nil && errors.IsNotFound(err) {
+			reqLogger.Info("Creating a new Pod", "Pod.Namespace", pod.Namespace, "Pod.Name", pod.Name)
+			err = r.client.Create(context.TODO(), pod)
+			if err != nil {
+				return reconcile.Result{}, err
+			}
+
+			// Pod created successfully - don't requeue
+			return reconcile.Result{}, nil
+		} else if err != nil {
+			return reconcile.Result{}, err
+		}
+
+		// Pod already exists - don't requeue
+		reqLogger.Info("Skip reconcile: Pod already exists", "Pod.Namespace", found.Namespace, "Pod.Name", found.Name)
+	*/
 	return reconcile.Result{}, nil
 }
 
@@ -138,6 +213,37 @@ func newPodForCR(cr *appv1alpha1.AppService) *corev1.Pod {
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      cr.Name + "-pod",
+			Namespace: cr.Namespace,
+			Labels:    labels,
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{
+				{
+					Name:    "busybox",
+					Image:   "busybox",
+					Command: []string{"sleep", "3600"},
+				},
+			},
+		},
+	}
+}
+
+func UniqueMemberName(Name string) string {
+	suffix := utilrand.String(randomSuffixLength)
+	if len(Name) > MaxNameLength {
+		Name = Name[:MaxNameLength]
+	}
+	return Name + "-" + suffix
+}
+
+// newPodForCR returns a busybox pod with the same name/namespace as the cr
+func newPodForCRWithRandomName(cr *appv1alpha1.AppService) *corev1.Pod {
+	labels := map[string]string{
+		"app": cr.Name,
+	}
+	return &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      UniqueMemberName(cr.Name),
 			Namespace: cr.Namespace,
 			Labels:    labels,
 		},
