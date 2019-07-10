@@ -60,15 +60,13 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 
 	// TODO(user): Modify this to be the types you create that are owned by the primary resource
 	// Watch for changes to secondary resource Pods and requeue the owner AppService
-	/*
-		err = c.Watch(&source.Kind{Type: &corev1.Pod{}}, &handler.EnqueueRequestForOwner{
-			IsController: true,
-			OwnerType:    &appv1alpha1.AppService{},
-		})
-		if err != nil {
-			return err
-		}
-	*/
+	err = c.Watch(&source.Kind{Type: &corev1.Pod{}}, &handler.EnqueueRequestForOwner{
+		IsController: true,
+		OwnerType:    &appv1alpha1.AppService{},
+	})
+	if err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -174,6 +172,23 @@ func (r *ReconcileAppService) Reconcile(request reconcile.Request) (reconcile.Re
 		}
 	}
 
+	podList = &corev1.PodList{}
+	listOpts = &client.ListOptions{Namespace: instance.Namespace}
+	listOpts.SetLabelSelector(fmt.Sprintf("app=%s", instance.Name))
+	err = r.client.List(context.TODO(), listOpts, podList)
+	if err != nil {
+		// Error reading the object - requeue the request.
+		return reconcile.Result{}, err
+	}
+
+	instance.Status.Replicas = int32(len(podList.Items))
+
+	err = r.client.Status().Update(context.TODO(), instance)
+	reqLogger.Info("reconcile: status update", "Pod.Namespace", instance.Namespace, "Pod.Name", instance.Name,
+		"status replicas", instance.Status.Replicas)
+	if err != nil {
+		return reconcile.Result{}, err
+	}
 	/*
 		// Define a new Pod object
 		pod := newPodForCR(instance)
