@@ -5,3 +5,9 @@ metadata:
 spec:
   # Add fields here
   size: 3
+  values:
+    objects:
+      t:
+        "y": true
+        "n": 5
+      m: 10

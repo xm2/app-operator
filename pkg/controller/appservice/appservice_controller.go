@@ -3,6 +3,7 @@ package appservice
 import (
 	"context"
 	"fmt"
+	"reflect"
 
 	appv1alpha1 "app-operator/pkg/apis/app/v1alpha1"
 
@@ -23,7 +24,7 @@ import (
 
 const randomSuffixLength = 10
 
-// k8s object name has a maximum length
+// MaxNameLength define the maximum length of k8s object name
 const MaxNameLength = 63 - randomSuffixLength - 1
 
 var log = logf.Log.WithName("controller_appservice")
@@ -106,6 +107,36 @@ func (r *ReconcileAppService) Reconcile(request reconcile.Request) (reconcile.Re
 		// Error reading the object - requeue the request.
 		return reconcile.Result{}, err
 	}
+
+	val := instance.Spec.Values.Objects
+	reqLogger.Info("Spec.Values", "type", reflect.TypeOf(val), "value:", val)
+	for k, v := range val {
+		switch t := v.(type) {
+		default:
+			reqLogger.Info("Spec.Values", "type", reflect.TypeOf(t), "key:", k, "value:", t)
+		}
+	}
+	/*
+		if m, ok := val["m"]; ok {
+			switch tm := m.(type) {
+			case map[string]interface{}:
+				for k, v := range tm {
+					switch t := v.(type) {
+					case string:
+						reqLogger.Info("type string", "key", k, "value:", t)
+					case bool:
+						reqLogger.Info("type bool", "key", k, "value:", t)
+					case int64:
+						reqLogger.Info("type int64", "key", k, "value:", t)
+					default:
+						fmt.Printf("unkown type %T, key: %+v, value:%+v", t, k, t)
+
+					}
+				}
+			}
+
+		}
+	*/
 
 	podList := &corev1.PodList{}
 	listOpts := &client.ListOptions{Namespace: instance.Namespace}
@@ -243,7 +274,7 @@ func newPodForCR(cr *appv1alpha1.AppService) *corev1.Pod {
 	}
 }
 
-func UniqueMemberName(Name string) string {
+func uniqueMemberName(Name string) string {
 	suffix := utilrand.String(randomSuffixLength)
 	if len(Name) > MaxNameLength {
 		Name = Name[:MaxNameLength]
@@ -258,7 +289,7 @@ func newPodForCRWithRandomName(cr *appv1alpha1.AppService) *corev1.Pod {
 	}
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      UniqueMemberName(cr.Name),
+			Name:      uniqueMemberName(cr.Name),
 			Namespace: cr.Namespace,
 			Labels:    labels,
 		},
